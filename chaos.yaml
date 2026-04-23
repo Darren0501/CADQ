@@ -1,0 +1,16 @@
+apiVersion: chaos-mesh.org/v1alpha1
+kind: NetworkChaos
+metadata:
+  name: frontend-delay
+  namespace: default
+spec:
+  action: delay
+  mode: all
+  selector:
+    labelSelectors:
+      # This targets ONLY the frontend microservice
+      app: frontend
+  delay:
+    latency: "1000ms"
+    correlation: "100"
+    jitter: "0ms"
