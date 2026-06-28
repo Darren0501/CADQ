@@ -257,7 +257,7 @@ class CADQEngine:
             json.dump(metadata, f, indent=2)
 
         while os.path.exists(LOCKFILE_PATH):
-            time.sleep(2) # Mengecek penghapusan file lebih cepat
+            time.sleep(2) 
 
         subprocess.run(f"iptables -D INPUT -p tcp --dport {target_port} -j DROP", shell=True)
         subprocess.run(f"iptables -D FORWARD -p tcp --dport {target_port} -j DROP", shell=True)
@@ -265,15 +265,12 @@ class CADQEngine:
 if __name__ == '__main__':
     cadq = CADQEngine()
     
-    # Jalankan Background Thread untuk Cache Pod IP
     cache_thread = threading.Thread(target=cadq.sync_pod_cache, daemon=True)
     cache_thread.start()
     
-    # Jalankan Background Thread untuk Sensor Latensi Master Node
     latency_thread = threading.Thread(target=cadq.monitor_control_plane_health, daemon=True)
     latency_thread.start()
-    
-    # --- FIX 4: LOOP ABADI MENCEGAH CRASHLOOPBACKOFF ---
+
     while True:
         try:
             cadq.evaluate_telemetry_loop()
