@@ -10,7 +10,6 @@ import socket
 from collections import deque
 from kubernetes import client, config
 
-# Configure logging to output to standard out
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - [CADQ] - %(levelname)s - %(message)s'
@@ -33,7 +32,6 @@ class CADQEngine:
         self.active_chaos = False
         self._chaos_lock = threading.Lock()
         
-        # --- LOCAL CACHE UNTUK RESOLUSI IP TANPA LAG ---
         self.pod_ip_cache = {}
         self._cache_lock = threading.Lock()
 
@@ -58,7 +56,6 @@ class CADQEngine:
         logging.info("Starting Background Pod IP Cache Synchronizer...")
         while True:
             try:
-                # FIX 1: JANGAN PANGGIL API SAAT CHAOS! (Mencegah GIL Stealing & CPU Drop)
                 with self._chaos_lock:
                     in_chaos = self.active_chaos
                 
@@ -66,21 +63,18 @@ class CADQEngine:
                     time.sleep(5)
                     continue
 
-                # Mengambil seluruh data pod di cluster
                 pods = self.core_api.list_pod_for_all_namespaces(_request_timeout=3)
                 new_cache = {}
                 for pod in pods.items:
                     if pod.status.pod_ip:
                         new_cache[pod.status.pod_ip] = pod.metadata.namespace
                 
-                # Update kamus lokal secara aman
                 with self._cache_lock:
                     self.pod_ip_cache = new_cache
                     
             except Exception as e:
-                pass # Tertelan diam-diam agar tidak spam log
-            
-            # Refresh data setiap 10 detik (agar CPU lebih tenang)
+                pass 
+
             time.sleep(10)
 
     # -------------------------------------------------------------------------
@@ -125,7 +119,7 @@ class CADQEngine:
     def evaluate_telemetry_loop(self):
         logging.info("CADQ Local Engine ON. Monitoring Control Plane latency and local traffic flow...")
         target_port = 5432
-        TARGET_NAMESPACE = "backend-ns" # Namespace tempat Database berada
+        TARGET_NAMESPACE = "backend-ns"
 
         cmd = ["tcpdump", "-nn", "-l", "-i", "any", f"tcp dst port {target_port} and (tcp[tcpflags] == tcp-syn)"]
         process = None
@@ -155,13 +149,11 @@ class CADQEngine:
 
                 syn_timestamps[source_ip].append(current_time)
 
-                # FIX 2: AUTO-HEALING SLIDING WINDOW (Buang paket basi secara dinamis)
                 while syn_timestamps[source_ip] and (current_time - syn_timestamps[source_ip][0] > TIME_WINDOW_SEC):
                     syn_timestamps[source_ip].popleft()
 
                 if len(syn_timestamps[source_ip]) == THRESHOLD_PACKETS:
                     
-                    # --- PENGECEKAN DINAMIS (BUKAN HARDCODE) ---
                     with self._cache_lock:
                         source_ns = self.pod_ip_cache.get(source_ip, "external_or_unknown")
                     
@@ -188,7 +180,6 @@ class CADQEngine:
                         exact_detection_start = syn_timestamps[source_ip][0]
                         ttq = self.execute_dynamic_quarantine_local(target_port, source_ip, exact_detection_start)
                         
-                        # FIX 3: ZOMBIE CLEANER
                         try:
                             process.terminate()
                             process.wait(timeout=2)
@@ -200,7 +191,6 @@ class CADQEngine:
                         self._hold_quarantine(source_ip, target_port, ttq)
                         break
 
-            # Pastikan zombie mati jika loop keluar secara natural
             if process:
                 try:
                     process.terminate()
